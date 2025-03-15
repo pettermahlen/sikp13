@@ -1,0 +1,10 @@
+---
+description: Kotlin Multiplatform
+globs: 
+alwaysApply: false
+---
+
+# Kotlin Multiplatform
+
+- Use Compose Multiplatform as described here: https://www.jetbrains.com/compose-multiplatform/
+- Use Kotlin Multiplatform: https://kotlinlang.org/docs/multiplatform.html
