@@ -1,0 +1,27 @@
+CREATE TABLE players (
+    name TEXT NOT NULL PRIMARY KEY,
+    skill_level TEXT NOT NULL
+);
+
+insertPlayer:
+INSERT OR REPLACE INTO players(name, skill_level)
+VALUES (?, ?);
+
+listPlayers:
+SELECT *
+FROM players
+ORDER BY name;
+
+getPlayer:
+SELECT *
+FROM players
+WHERE name = ?;
+
+updatePlayer:
+UPDATE players
+SET skill_level = ?
+WHERE name = ?;
+
+deletePlayer:
+DELETE FROM players
+WHERE name = ?; 

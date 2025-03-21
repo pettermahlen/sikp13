@@ -8,6 +8,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.compose.material.ExperimentalMaterialApi
 
 enum class AttendanceStatus {
     PRESENT,
@@ -15,9 +16,9 @@ enum class AttendanceStatus {
     UNKNOWN;
 
     fun displayName(): String = when (this) {
-        PRESENT -> "Present"
-        NOT_PRESENT -> "Not Present"
-        UNKNOWN -> "Unknown"
+        PRESENT -> "Ja"
+        NOT_PRESENT -> "Nej"
+        UNKNOWN -> "?"
     }
 }
 
@@ -27,7 +28,7 @@ enum class GroupingMode {
 
     fun displayName(): String = when (this) {
         EVEN -> "Jämna"
-        SKILL_BASED -> "Nivåindelat"
+        SKILL_BASED -> "Nivåer"
     }
 }
 
@@ -43,13 +44,21 @@ class SkillBasedDivider : GroupDivider {
         // Sort players by skill level in descending order
         val sortedPlayers = players.sortedByDescending { it.skillLevel }
         
-        // Calculate how many players should be in each group
-        val playersPerGroup = (players.size + groupCount - 1) / groupCount
+        // Calculate base size and how many groups need an extra player
+        val baseSize = players.size / groupCount
+        val extraPlayers = players.size % groupCount
         
-        // Create groups and distribute players
-        return sortedPlayers.chunked(playersPerGroup)
-            .take(groupCount) // Ensure we don't create more groups than requested
-            .map { it.toMutableList() } // Convert to mutable list as required by return type
+        // Create groups with correct sizes
+        val groups = mutableListOf<MutableList<Player>>()
+        var currentIndex = 0
+        
+        for (i in 0 until groupCount) {
+            val groupSize = baseSize + if (i < extraPlayers) 1 else 0
+            groups.add(sortedPlayers.subList(currentIndex, currentIndex + groupSize).toMutableList())
+            currentIndex += groupSize
+        }
+        
+        return groups
     }
 }
 
@@ -100,13 +109,250 @@ private fun List<Player>.divideIntoGroups(groupCount: Int, mode: GroupingMode): 
     return divider.divideIntoGroups(this, groupCount)
 }
 
+@OptIn(ExperimentalMaterialApi::class)
+@Composable
+private fun AttendanceChips(
+    currentStatus: AttendanceStatus,
+    onStatusChanged: (AttendanceStatus) -> Unit,
+    modifier: Modifier = Modifier,
+    availableStatuses: List<AttendanceStatus> = AttendanceStatus.values().toList()
+) {
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = modifier
+    ) {
+        availableStatuses.forEach { status ->
+            FilterChip(
+                selected = currentStatus == status,
+                onClick = { onStatusChanged(status) },
+                modifier = Modifier.weight(1f),
+                colors = ChipDefaults.filterChipColors(
+                    selectedBackgroundColor = MaterialTheme.colors.primary,
+                    selectedContentColor = MaterialTheme.colors.onPrimary,
+                ),
+            ) {
+                Text(
+                    text = status.displayName(),
+                    style = MaterialTheme.typography.caption,
+                    modifier = Modifier.padding(horizontal = 2.dp)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun GroupCountSelector(
+    selectedGroupCount: Int,
+    isDropDownExpanded: Boolean,
+    onDropDownExpandedChange: (Boolean) -> Unit,
+    onGroupCountSelected: (Int) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Box(modifier = modifier) {
+        OutlinedButton(
+            onClick = { onDropDownExpandedChange(true) }
+        ) {
+            Text("#Grupper: $selectedGroupCount")
+        }
+        
+        DropdownMenu(
+            expanded = isDropDownExpanded,
+            onDismissRequest = { onDropDownExpandedChange(false) }
+        ) {
+            (2..8).forEach { count ->
+                DropdownMenuItem(
+                    onClick = {
+                        onGroupCountSelected(count)
+                        onDropDownExpandedChange(false)
+                    }
+                ) {
+                    Text("$count")
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun GroupModeSelector(
+    groupingMode: GroupingMode,
+    onGroupingModeChanged: (GroupingMode) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Button(
+        onClick = { 
+            onGroupingModeChanged(
+                if (groupingMode == GroupingMode.EVEN) 
+                    GroupingMode.SKILL_BASED 
+                else GroupingMode.EVEN
+            )
+        },
+        modifier = modifier
+    ) {
+        Text(groupingMode.displayName())
+    }
+}
+
+@Composable
+private fun GroupControls(
+    selectedGroupCount: Int,
+    isDropDownExpanded: Boolean,
+    onDropDownExpandedChange: (Boolean) -> Unit,
+    onGroupCountSelected: (Int) -> Unit,
+    groupingMode: GroupingMode,
+    onGroupingModeChanged: (GroupingMode) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        modifier = modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            GroupCountSelector(
+                selectedGroupCount = selectedGroupCount,
+                isDropDownExpanded = isDropDownExpanded,
+                onDropDownExpandedChange = onDropDownExpandedChange,
+                onGroupCountSelected = onGroupCountSelected
+            )
+            
+            GroupModeSelector(
+                groupingMode = groupingMode,
+                onGroupingModeChanged = onGroupingModeChanged
+            )
+        }
+    }
+}
+
+@Composable
+private fun PlayerGroup(
+    players: List<Player>,
+    allPlayers: List<Player>,
+    modifier: Modifier = Modifier
+) {
+    Card(
+        modifier = modifier,
+        elevation = 2.dp
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(8.dp)
+        ) {
+            players.forEach { player ->
+                Text(
+                    formatPlayerName(player, allPlayers),
+                    style = MaterialTheme.typography.body2,
+                    modifier = Modifier.padding(vertical = 2.dp)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun TrainingGroups(
+    groups: List<List<Player>>,
+    allPlayers: List<Player>,
+    modifier: Modifier = Modifier
+) {
+    LazyColumn(
+        modifier = modifier.fillMaxSize(),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        items(groups.chunked(2)) { groupPair ->
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                groupPair.forEach { group ->
+                    PlayerGroup(
+                        players = group,
+                        allPlayers = allPlayers,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+                if (groupPair.size == 1) {
+                    Spacer(modifier = Modifier.weight(1f))
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun PlayerAttendanceRow(
+    player: Player,
+    currentStatus: AttendanceStatus,
+    onStatusChanged: (AttendanceStatus) -> Unit,
+    availableStatuses: List<AttendanceStatus>,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 2.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Text(
+            text = player.name,
+            style = MaterialTheme.typography.body1,
+            modifier = Modifier.weight(1f)
+        )
+        AttendanceChips(
+            currentStatus = currentStatus,
+            onStatusChanged = onStatusChanged,
+            modifier = Modifier.weight(1f),
+            availableStatuses = availableStatuses
+        )
+    }
+}
+
+@Composable
+private fun AttendanceSection(
+    title: String,
+    players: List<Player>,
+    playerAttendance: Map<Player, AttendanceStatus>,
+    onAttendanceChanged: (Player, AttendanceStatus) -> Unit,
+    availableStatuses: List<AttendanceStatus>,
+    modifier: Modifier = Modifier
+) {
+    Column(modifier = modifier) {
+        Text(
+            title,
+            style = MaterialTheme.typography.h6,
+            modifier = Modifier.padding(16.dp)
+        )
+        
+        LazyColumn(
+            modifier = Modifier.fillMaxHeight()
+        ) {
+            items(players) { player ->
+                PlayerAttendanceRow(
+                    player = player,
+                    currentStatus = playerAttendance[player] ?: AttendanceStatus.UNKNOWN,
+                    onStatusChanged = { status -> onAttendanceChanged(player, status) },
+                    availableStatuses = availableStatuses
+                )
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterialApi::class)
 @Composable
 fun TrainingSession(
     onNavigateBack: () -> Unit,
-    playersDb: PlayersDb
+    players: List<Player>
 ) {
-    val playerAttendance = remember { mutableStateOf(playersDb.listPlayers().associateWith { AttendanceStatus.UNKNOWN }.toMutableMap()) }
-    var selectedGroupCount by remember { mutableStateOf(2) }
+    val playerAttendance = remember { mutableStateOf(players.associateWith { AttendanceStatus.UNKNOWN }.toMutableMap()) }
+    var selectedGroupCount by remember { mutableStateOf(3) }
     var groupingMode by remember { mutableStateOf(GroupingMode.EVEN) }
     var isDropDownExpanded by remember { mutableStateOf(false) }
 
@@ -115,6 +361,8 @@ fun TrainingSession(
             .filter { it.value == AttendanceStatus.PRESENT }
             .map { it.key }
     }
+
+    val allPlayers = players
 
     val groups = remember(selectedGroupCount, groupingMode, presentPlayers) {
         derivedStateOf { 
@@ -125,7 +373,7 @@ fun TrainingSession(
     MaterialTheme {
         Column(Modifier.fillMaxSize()) {
             TopAppBar(
-                title = { Text("Training Session") },
+                title = { Text("Träning") },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
                         Text("←")
@@ -140,54 +388,14 @@ fun TrainingSession(
                     .fillMaxWidth()
                     .padding(16.dp)
             ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        "Training Groups",
-                        style = MaterialTheme.typography.h6
-                    )
-                    
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Box {
-                            OutlinedButton(
-                                onClick = { isDropDownExpanded = true }
-                            ) {
-                                Text("#Grupper: $selectedGroupCount")
-                            }
-                            
-                            DropdownMenu(
-                                expanded = isDropDownExpanded,
-                                onDismissRequest = { isDropDownExpanded = false }
-                            ) {
-                                (2..8).forEach { count ->
-                                    DropdownMenuItem(
-                                        onClick = {
-                                            selectedGroupCount = count
-                                            isDropDownExpanded = false
-                                        }
-                                    ) {
-                                        Text("$count")
-                                    }
-                                }
-                            }
-                        }
-                        
-                        Button(
-                            onClick = { 
-                                groupingMode = if (groupingMode == GroupingMode.EVEN) 
-                                    GroupingMode.SKILL_BASED else GroupingMode.EVEN
-                            }
-                        ) {
-                            Text(groupingMode.displayName())
-                        }
-                    }
-                }
+                GroupControls(
+                    selectedGroupCount = selectedGroupCount,
+                    isDropDownExpanded = isDropDownExpanded,
+                    onDropDownExpandedChange = { isDropDownExpanded = it },
+                    onGroupCountSelected = { selectedGroupCount = it },
+                    groupingMode = groupingMode,
+                    onGroupingModeChanged = { groupingMode = it }
+                )
 
                 Box(
                     modifier = Modifier
@@ -197,70 +405,27 @@ fun TrainingSession(
                 ) {
                     if (presentPlayers.isEmpty()) {
                         Text(
-                            "No players marked as present",
+                            "Inga spelare närvarande",
                             style = MaterialTheme.typography.body2,
                             modifier = Modifier.align(Alignment.Center)
                         )
                     } else {
-                        val currentGroups = groups.value
-                        
                         Column(
                             modifier = Modifier.fillMaxSize()
                         ) {
-                            // Display total player count
                             Text(
                                 "Total players: ${presentPlayers.size}",
                                 style = MaterialTheme.typography.caption,
                                 modifier = Modifier.padding(bottom = 8.dp)
                             )
                             
-                            // Scrollable groups section
-                            Box(
+                            TrainingGroups(
+                                groups = groups.value,
+                                allPlayers = allPlayers,
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .weight(1f)
-                            ) {
-                                LazyColumn(
-                                    modifier = Modifier.fillMaxSize(),
-                                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                                ) {
-                                    items(currentGroups.chunked(2)) { groupPair ->
-                                        Row(
-                                            modifier = Modifier.fillMaxWidth(),
-                                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                        ) {
-                                            groupPair.forEach { group ->
-                                                Card(
-                                                    modifier = Modifier.weight(1f),
-                                                    elevation = 2.dp
-                                                ) {
-                                                    Column(
-                                                        modifier = Modifier
-                                                            .fillMaxWidth()
-                                                            .padding(8.dp)
-                                                    ) {
-                                                        Text(
-                                                            "Group ${currentGroups.indexOf(group) + 1}",
-                                                            style = MaterialTheme.typography.subtitle1
-                                                        )
-                                                        group.forEach { player ->
-                                                            Text(
-                                                                formatPlayerName(player, presentPlayers),
-                                                                style = MaterialTheme.typography.body2,
-                                                                modifier = Modifier.padding(vertical = 2.dp)
-                                                            )
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                            // If we have an odd number of groups in this row, add an empty weight
-                                            if (groupPair.size == 1) {
-                                                Spacer(modifier = Modifier.weight(1f))
-                                            }
-                                        }
-                                    }
-                                }
-                            }
+                            )
                         }
                     }
                 }
@@ -274,75 +439,40 @@ fun TrainingSession(
                     .weight(1f)
                     .fillMaxWidth()
             ) {
-                Text(
-                    "Mark Player Attendance",
-                    style = MaterialTheme.typography.h6,
-                    modifier = Modifier.padding(16.dp)
-                )
-                
-                LazyColumn(
-                    modifier = Modifier.weight(1f)
-                ) {
-                    val nonPresentPlayers = playersDb.listPlayers()
-                        .filter { player -> playerAttendance.value[player] != AttendanceStatus.PRESENT }
-                    
-                    items(nonPresentPlayers) { player ->
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 16.dp, vertical = 8.dp)
-                        ) {
-                            Text(
-                                text = player.name,
-                                style = MaterialTheme.typography.body1
-                            )
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                AttendanceStatus.values().forEach { status ->
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        modifier = Modifier.weight(1f)
-                                    ) {
-                                        RadioButton(
-                                            selected = playerAttendance.value[player] == status,
-                                            onClick = {
-                                                playerAttendance.value = playerAttendance.value.toMutableMap().apply {
-                                                    put(player, status)
-                                                }
-                                            }
-                                        )
-                                        Text(
-                                            text = status.displayName(),
-                                            style = MaterialTheme.typography.body2
-                                        )
-                                    }
-                                }
-                            }
+                // Pending attendance section
+                AttendanceSection(
+                    title = "Närvarande? (${playerAttendance.value.count { it.value == AttendanceStatus.UNKNOWN }})",
+                    players = allPlayers.filter { player -> 
+                        playerAttendance.value[player] != AttendanceStatus.PRESENT &&
+                        playerAttendance.value[player] != AttendanceStatus.NOT_PRESENT
+                    },
+                    playerAttendance = playerAttendance.value,
+                    onAttendanceChanged = { player, status ->
+                        playerAttendance.value = playerAttendance.value.toMutableMap().apply {
+                            put(player, status)
                         }
-                    }
-                }
-                
-                // Summary of attendance
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp)
-                ) {
-                    val presentCount = playerAttendance.value.count { it.value == AttendanceStatus.PRESENT }
-                    val notPresentCount = playerAttendance.value.count { it.value == AttendanceStatus.NOT_PRESENT }
-                    val unknownCount = playerAttendance.value.count { it.value == AttendanceStatus.UNKNOWN }
-                    
-                    Text(
-                        "Attendance Summary",
-                        style = MaterialTheme.typography.subtitle1,
-                        modifier = Modifier.padding(bottom = 8.dp)
-                    )
-                    Text("Present: $presentCount")
-                    Text("Not Present: $notPresentCount")
-                    Text("Unknown: $unknownCount")
-                }
+                    },
+                    availableStatuses = listOf(AttendanceStatus.PRESENT, AttendanceStatus.NOT_PRESENT),
+                    modifier = Modifier.weight(0.6f)
+                )
+
+                Divider()
+
+                // Absent players section
+                AttendanceSection(
+                    title = "Frånvarande (${playerAttendance.value.count { it.value == AttendanceStatus.NOT_PRESENT }})",
+                    players = allPlayers.filter { player -> 
+                        playerAttendance.value[player] == AttendanceStatus.NOT_PRESENT
+                    },
+                    playerAttendance = playerAttendance.value,
+                    onAttendanceChanged = { player, status ->
+                        playerAttendance.value = playerAttendance.value.toMutableMap().apply {
+                            put(player, status)
+                        }
+                    },
+                    availableStatuses = listOf(AttendanceStatus.PRESENT, AttendanceStatus.NOT_PRESENT),
+                    modifier = Modifier.weight(0.4f)
+                )
             }
         }
     }

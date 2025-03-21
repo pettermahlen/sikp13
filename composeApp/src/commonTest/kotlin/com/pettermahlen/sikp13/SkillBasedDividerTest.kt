@@ -134,4 +134,36 @@ class SkillBasedDividerTest {
         assertEquals(SkillLevel.EASY, result[1][1].skillLevel)
         assertEquals(SkillLevel.EASY, result[1][2].skillLevel)
     }
+
+    @Test
+    fun `distributes 13 players evenly across 4 groups`() {
+        val players = listOf(
+            Player("Player 1", SkillLevel.HARD),
+            Player("Player 2", SkillLevel.HARD),
+            Player("Player 3", SkillLevel.HARD),
+            Player("Player 4", SkillLevel.HARD),
+            Player("Player 5", SkillLevel.MEDIUM),
+            Player("Player 6", SkillLevel.MEDIUM),
+            Player("Player 7", SkillLevel.MEDIUM),
+            Player("Player 8", SkillLevel.MEDIUM),
+            Player("Player 9", SkillLevel.EASY),
+            Player("Player 10", SkillLevel.EASY),
+            Player("Player 11", SkillLevel.EASY),
+            Player("Player 12", SkillLevel.EASY),
+            Player("Player 13", SkillLevel.EASY)
+        )
+        
+        val result = divider.divideIntoGroups(players, 4)
+        
+        // Should have 4 groups
+        assertEquals(4, result.size)
+        
+        // Three groups should have 3 players and one group should have 4 players
+        val groupSizes = result.map { it.size }
+        assertEquals(1, groupSizes.count { it == 4 })
+        assertEquals(3, groupSizes.count { it == 3 })
+        
+        // Total number of players should be preserved
+        assertEquals(13, result.sumOf { it.size })
+    }
 } 

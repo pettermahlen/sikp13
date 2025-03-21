@@ -13,6 +13,10 @@ pluginManagement {
         mavenCentral()
         gradlePluginPortal()
     }
+    plugins {
+        // SQLDelight plugin
+        id("app.cash.sqldelight") version "2.0.1"
+    }
 }
 
 dependencyResolutionManagement {
